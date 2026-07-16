@@ -1,3 +1,17 @@
+"""③ 주차(Parking) 판단 노드 — launch: final_parking.py
+
+LiDAR만으로 동작하는 8단계 후진 주차 FSM.
+직진하며 우측의 주차 차량 2대를 지나친 뒤, 두 차량 사이 빈 자리에
+후진 주차하고(좌/우 거리 차로 조향 보정) 잠시 정지 후 우회전으로 탈출한다.
+
+상태 흐름:
+  SEARCH → FIRST_STOP → REVERSE_RIGHT → REVERSE_STRAIGHT
+        → REVERSE_PAUSE → ADJUST_FORWARD → GO_OUT_TURN → GO_OUT_STRAIGHT
+
+LiDAR 각도 기준 (rplidar, ranges 배열 비율로 인덱싱):
+  95~105°  = 차량 우측  /  265~275° = 차량 좌측
+모든 감지는 3회 연속(detect/clear count)일 때만 상태 전이 → 노이즈 억제.
+"""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
@@ -41,6 +55,7 @@ class ParkingNode(Node):
         self.right_obstacle_state = 'no_obstacle'  # or 'passing' or 'out'
 
     def lidar_callback(self, msg: LaserScan):
+        """LiDAR 스캔마다 현재 상태의 핸들러로 분기 (FSM 디스패처)."""
         if self.state == ParkingState.SEARCH:
             self.handle_search(msg)
         elif self.state == ParkingState.FIRST_STOP:
@@ -60,6 +75,11 @@ class ParkingNode(Node):
 
 
     def handle_search(self, msg: LaserScan):
+        """[SEARCH] 직진하며 우측 LiDAR로 주차 차량 감지.
+
+        감지 상태를 no_obstacle → passed_first → between → passed_second로 진행시켜
+        '두 번째 주차 차량을 완전히 지나친 순간' 정지하고 FIRST_STOP으로 전이.
+        """
         # 265~275도 범위 평균 거리 계산
         angle_min_idx = int(len(msg.ranges) * (95 / 360))
         angle_max_idx = int(len(msg.ranges) * (105 / 360))
@@ -104,6 +124,7 @@ class ParkingNode(Node):
             self.publish_motion_command(100, 100, -1) # 가변저항값 조정으로 인해 -1 조향을 줘야 직진을 한다.
 
     def handle_first_stop(self, msg: LaserScan):
+        """[FIRST_STOP] 정지 상태에서 조향을 우측 최대로 꺾어두고 잠시 대기 후 후진 시작."""
         self.publish_motion_command(0, 0, 30)
         # 첫 번째 정지 상태에서 1초 후 REVERSE_RIGHT 상태로 전이
         if (self.get_clock().now() - self.state_start_time).nanoseconds >= 2e9:
@@ -112,6 +133,11 @@ class ParkingNode(Node):
             self.state = ParkingState.REVERSE_RIGHT
         
     def handle_reverse_right(self, msg: LaserScan):
+        """[REVERSE_RIGHT] 우측 조향 후진으로 주차 칸에 진입.
+
+        좌/우 양쪽에서 동시에 주차 차량이 감지되면(둘 다 'passing')
+        차체가 두 차량 사이에 들어온 것이므로 REVERSE_STRAIGHT로 전이.
+        """
         # 오른쪽으로 후진
         self.publish_motion_command(-70, -30, self.init_steer)
         self.get_logger().info("🔁 오른쪽으로 후진 중...")
@@ -177,6 +203,11 @@ class ParkingNode(Node):
             self.state = ParkingState.REVERSE_STRAIGHT
 
     def handle_reverse_straight(self, msg: LaserScan):
+        """[REVERSE_STRAIGHT] 좌/우 차량 거리 차이로 조향을 보정하며 직진 후진.
+
+        왼쪽에 치우치면 +3(우측), 오른쪽에 치우치면 -3(좌측)으로 미세 조정.
+        좌/우 차량이 모두 시야에서 사라지면(둘 다 'out') 주차 완료로 판단.
+        """
         # 똑바로 후진
         # self.publish_motion_command(-70, -70, -1) # 김수경표 좌우거리 차 조정을 안쓴다면
         steering = -1
@@ -247,6 +278,7 @@ class ParkingNode(Node):
             self.state = ParkingState.REVERSE_PAUSE
 
     def handle_reverse_pause(self, msg: LaserScan):
+        """[REVERSE_PAUSE] 주차 완료 상태로 정지 유지 (심사 확인용 대기) 후 탈출 시작."""
         # 후진 완료 후 3초 정지
         self.publish_motion_command(0, 0, 0)
         self.get_logger().info("🔁 후진 완료 - 3초 정지 중...")
@@ -257,6 +289,7 @@ class ParkingNode(Node):
             self.state = ParkingState.ADJUST_FORWARD
 
     def handle_adjust_forward(self, msg: LaserScan):
+        """[ADJUST_FORWARD] 전진으로 칸에서 빠져나오다가, 우측 차량을 벗어나면 우회전 시작."""
         # 탈출 직진
         self.publish_motion_command(70, 70, 1) # 그냥 직진할거면 -1. 우회전을 좀더 주려고 일단 1을 줘봄.
         self.get_logger().info("🔁 탈출 직진 중...")
@@ -286,6 +319,7 @@ class ParkingNode(Node):
             self.get_logger().info("🟩 우측 주차 차량 탐지 안됨 - 우회전 시작")
 
     def handle_go_out_turn(self, msg: LaserScan):
+        """[GO_OUT_TURN] 우회전으로 주행 방향 정렬 → 우측이 비면 직진 탈출로 전이."""
         # 탈출 우회전
         self.publish_motion_command(50, 20, 30)
         self.get_logger().info("🔁 탈출 우회전 중...")
@@ -314,6 +348,7 @@ class ParkingNode(Node):
             self.get_logger().info("🟩 우측 주차 차량 탐지 안됨 - 직진 시작")
 
     def handle_go_out_straight(self, msg: LaserScan):
+        """[GO_OUT_STRAIGHT] 최종 상태: 직진으로 주차 구역 이탈 (미션 종료)."""
         # 탈출 직진
         self.publish_motion_command(70, 70, -1)
 

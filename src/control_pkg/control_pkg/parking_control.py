@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
+"""하드웨어 제어 노드 (주차 미션용, 토글 없는 단순 버전).
 
+motion_command를 받는 즉시 아두이노로 전송하고,
+종료 시 정지 명령(s0r0l0)을 보낸 뒤 시리얼 포트를 닫는다.
+"""
 import rclpy
 from rclpy.node import Node
 from interfaces_pkg.msg import MotionCommand

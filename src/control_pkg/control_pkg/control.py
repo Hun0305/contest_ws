@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
+"""하드웨어 제어 노드 (기록주행/장애물주행용).
 
+motion_command(MotionCommand)를 구독해 아두이노 시리얼 프로토콜
+"s{조향}r{우측속도}l{좌측속도}\\n" 문자열로 변환·전송한다.
+
+스페이스바로 MOTION/ZERO 모드를 토글:
+  - ZERO 모드(기본): 항상 정지 명령(s0r0l0) 전송 → 출발선에서 대기
+  - MOTION 모드: 판단 노드의 명령을 그대로 전달 → 미션 시작
+"""
 import sys
 import termios
 import tty

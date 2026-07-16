@@ -1,3 +1,9 @@
+"""키보드 수동 주행 + 학습 데이터 수집 도구.
+
+w/a/s/d로 차량을 직접 조종하면서 'e' 키로 웹캠 프레임을 저장한다.
+YOLO 세그멘테이션 학습용 차선 이미지(lib/lane2)를 트랙에서 수집할 때 사용했다.
+ROS 토픽을 거치지 않고 아두이노 시리얼에 직접 명령을 보낸다.
+"""
 import rclpy
 from rclpy.node import Node
 import sys

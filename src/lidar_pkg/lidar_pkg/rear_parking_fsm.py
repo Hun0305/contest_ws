@@ -1,3 +1,12 @@
+"""후진 주차 FSM (odometry yaw 기반 — motion_parking.py의 대안 구현).
+
+motion_parking.py가 좌/우 LiDAR 감지만으로 상태를 전이하는 것과 달리,
+이 버전은 /odom의 yaw(회전각)를 추적해 후진 회전량이 85°에 도달하면
+직진 후진으로 전환한다. (최종 대회에서는 motion_parking.py 사용)
+
+상태: WAIT_FOR_CAR1 → REVERSE_RIGHT → REVERSE_STRAIGHT → PAUSE_CENTER
+      → FORWARD_STRAIGHT → FORWARD_RIGHT → FORWARD_OUT
+"""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan

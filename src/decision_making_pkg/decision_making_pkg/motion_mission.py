@@ -1,4 +1,21 @@
 #!/usr/bin/env python3
+"""② 장애물주행(Obstacle Mission) 판단 노드 — launch: final_mission.py
+
+카메라(장애물 bbox 면적) + LiDAR(측면 거리) + 신호등(빨간불)을 종합해 주행을 결정한다.
+
+시나리오 흐름:
+  1. 2차선 주행 중 LiDAR 측면(90°)에서 장애물 5회 연속 감지 → 1차선으로 변경 (1회만)
+  2. 1차선에서 전방 장애물 bbox 면적에 따라:
+       area < small(5000)          → 정지 (너무 멀거나 오검출)
+       small ≤ area < medium(12000) → 저속(100) 추종 직진
+       medium ≤ area < large(15000) → 정지 (안전 거리 유지)
+       area ≥ large                → 후진 (너무 근접)
+  3. 추종 중 LiDAR에서 장애물이 사라지면(3회 연속) → 2차선으로 복귀
+  4. 빨간불(면적 > 18000, 3회 연속) → 정차, 해제 시 재출발
+
+차선 변경 직후에는 조향이 안정될 때까지(ignore_obstacle_after_lane_change)
+장애물 판단을 잠시 무시해 오동작을 막는다.
+"""
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -93,7 +110,12 @@ class MotionNode(Node):
         self.first_lane_stabilized = False
 
     def lidar_callback(self, msg: LaserScan):
-        
+        """현재 차선에 따라 측면 구간의 LiDAR 평균 거리를 갱신.
+
+        1차선이면 우측(-90° 부근), 2차선이면 좌측(+90° 부근)을 감시해
+        옆 차선(장애물이 있는 쪽)의 물체 존재 여부를 판단하는 데 쓴다.
+        결과는 self.latest_lidar_avg에 저장되며 obstacle_callback에서 소비.
+        """
         # 1차선(270° 부근) / 2차선(90° 부근)에 따라 볼 구간 설정
         if self.current_lane == 1:
             start_deg, end_deg = -93.0, -90.0
@@ -136,6 +158,12 @@ class MotionNode(Node):
         #     self.get_logger().info(f"[LiDAR] ✅ 장애물 없음, 평균 거리 = {self.latest_lidar_avg:.2f} m")
 
     def obstacle_callback(self, msg: String):
+        """장애물 감지 결과 처리 — 미션의 핵심 상태 머신.
+
+        (1) 2차선: LiDAR 연속 감지 시 1차선으로 변경 트리거 (1회 한정)
+        (2) 1차선: 카메라 bbox 면적 구간별로 정지/추종/후진 결정,
+            추종 중 LiDAR에서 장애물이 사라지면 2차선 복귀 트리거
+        """
         # 차선 변경 중 또는 안정화 전까지 장애물 감지 무시
         if self.is_changing_lane or self.ignore_obstacle_after_lane_change:
             return
@@ -263,6 +291,8 @@ class MotionNode(Node):
                 self.lidar_obstacle_counter = 0
 
     def traffic_callback(self, msg: String):
+        """빨간불 정지 로직: red + 면적 > threshold 가 3회 연속이면 정차,
+        빨간불이 3회 연속 사라지면 주행 재개."""
         match = re.match(r'Detected:\s*(\w+),\s*Area:\s*([\d.]+)(?:,\s*Color:\s*(\w+))?', msg.data)
         if not match:
             return
@@ -292,6 +322,13 @@ class MotionNode(Node):
                     self.get_logger().info("🟢 Red light cleared: resuming")
 
     def lane_info_callback(self, msg: LaneInfo):
+        """차선 유지/차선 변경 주행 제어.
+
+        - 빨간불 대기 중이면 아무것도 발행하지 않음 (정지 유지)
+        - 차선 변경 중: 고정 조향으로 이동, 목표 차선 + 중앙 근접 시 완료
+        - 변경 직후: 조향이 3회 연속 안정되면 정지하고 장애물 감지 재개
+          (1차선 안정화 후에는 obstacle_callback이 속도를 전담)
+        """
         # Skip control while waiting at red light
         if self.wait_for_red_clear:
             return

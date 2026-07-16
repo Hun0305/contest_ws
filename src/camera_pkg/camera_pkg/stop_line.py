@@ -1,3 +1,8 @@
+"""정지선 감지 노드 (StopLineNode).
+
+YOLO 검출 중 'stop_line' 클래스 존재 여부를 로그로만 출력하는 실험용 노드.
+최종 대회 launch에는 포함되지 않았다 (신호등 정지는 traffic_light 면적 기준으로 대체).
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy

@@ -1,3 +1,12 @@
+"""전방 장애물(차량) 감지 노드 (ObstacleNode) — 장애물주행 미션용.
+
+cam0 영상 + YOLO 검출에서 'car' 클래스를 찾아,
+bbox 중심이 화면 가로 중앙 50% 영역 안에 있을 때만 유효 장애물로 판단하고
+"Detected: {bool}, Area: {bbox면적}" 문자열을 obstacle_result로 발행한다.
+
+bbox 면적은 전방 차량과의 거리 근사값으로, motion_mission.py가
+정지/추종/후진을 결정하는 기준이 된다.
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
@@ -91,6 +100,7 @@ class ObstacleNode(Node):
         self.mask_pub.publish(mask_msg)
 
     def detect_obstacle(self, detections: DetectionArray):
+        """첫 번째 'car' 검출을 찾아 (감지 여부, bbox 면적, bbox 중심 x)를 반환."""
         for det in detections.detections:
             if det.class_name == 'car':
                 cx = int(det.bbox.center.position.x)

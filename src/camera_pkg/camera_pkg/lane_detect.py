@@ -1,3 +1,18 @@
+"""차선 인식 노드 (LaneDetector).
+
+YOLO 세그멘테이션 결과(lane1/lane2 마스크)와 원본 영상을 시간 동기화로 받아
+BEV(Bird's Eye View) 변환 후 차선 중앙선을 계산하고,
+조향에 필요한 정보(LaneInfo)를 발행한다.
+
+파이프라인:
+  마스크 생성 → BEV 변환 → 모폴로지 정제 → 행 단위 좌/우 경계 추출
+  → 최장 세그먼트 선택 → 2차 다항식 외삽 → 중앙선/기울기/횡방향 오프셋 계산
+
+발행 토픽:
+  lane_info  (LaneInfo)  : steering_angle(중앙선 기울기°), lane_num(현재 차선), vehicle_position_x(중심 오프셋 px)
+  lane_viz   (Image)     : BEV 시각화 영상 (디버깅용)
+  lane_debug (Image)     : 중간 단계 마스크 영상 (디버깅용)
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
@@ -50,6 +65,11 @@ class LaneDetector(Node):
         self.get_logger().info(f"LaneDetector initialized: {cam_topic}, {det_topic}")
 
     def extrapolate_poly(self, pts, y_min, y_max, degree=2):
+        """검출된 차선 점들을 2차 다항식으로 피팅해 y_min~y_max 구간까지 외삽.
+
+        마스크가 화면 아래(차량 근처)까지 이어지지 않을 때
+        중앙선을 화면 하단까지 연장하기 위해 사용한다.
+        """
         if len(pts) < degree+1:
             return []
         ys = np.array([y for x,y in pts])
@@ -60,6 +80,11 @@ class LaneDetector(Node):
         return [(int(poly(y)), int(y)) for y in y_extra]
 
     def pick_longest_segment(self, pts):
+        """y좌표가 연속(간격 ≤1px)인 구간들로 점들을 나눈 뒤, 가장 긴 구간만 반환.
+
+        노이즈로 끊어진 짧은 조각들을 버리고 실제 차선에 해당하는
+        가장 긴 연속 구간만 남기는 필터 역할.
+        """
         if not pts:
             return []
         pts_sorted = sorted(pts, key=lambda p: p[1])
@@ -75,6 +100,12 @@ class LaneDetector(Node):
         return max(segments, key=lambda s: s[-1][1] - s[0][1])
 
     def sync_callback(self, img_msg, det_msg):
+        """영상 + YOLO 검출 동기 콜백. 차선 중앙선을 계산해 LaneInfo를 발행한다.
+
+        lane1/lane2 각각에 대해 중앙선을 구한 뒤, 차량이 화면 중심에 더
+        가까운(=|vehicle_position_x|가 작은) 차선을 현재 주행 차선으로 선택.
+        두 차선 모두 미검출이면 마지막으로 알고 있던 차선 번호를 유지(fail-safe).
+        """
         frame = self.bridge.imgmsg_to_cv2(img_msg, 'bgr8')
         h, w = frame.shape[:2]
 

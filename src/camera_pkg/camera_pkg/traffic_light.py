@@ -1,3 +1,13 @@
+"""신호등 색상 판별 노드 (TrafficLightNode).
+
+cam1 영상 + YOLO 검출(traffic_light bbox)을 동기화로 받아
+bbox ROI 내부를 HSV 색공간에서 red/yellow/green 픽셀 수로 분류하고,
+"Detected: {bool}, Area: {bbox면적}, Color: {색}" 문자열을
+traffic_light_result 토픽으로 발행한다.
+
+판단 노드(motion.py / motion_mission.py)는 이 문자열을 정규식으로 파싱해
+차선 변경 트리거(기록주행) 또는 빨간불 정지(장애물주행)에 사용한다.
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
@@ -95,6 +105,11 @@ class TrafficLightNode(Node):
         self.mask_pub.publish(mask_msg)
 
     def detect_traffic_light_color(self, image, detections: DetectionArray):
+        """첫 번째 traffic_light 검출의 bbox ROI에서 색상을 판별.
+
+        반환: (감지 여부, bbox 면적(w*h), 색상 문자열 red/yellow/green/unknown/none)
+        면적은 신호등까지의 거리(가까울수록 큼) 판단 기준으로 쓰인다.
+        """
         for det in detections.detections:
             if det.class_name == 'traffic_light':
                 # ROI 설정

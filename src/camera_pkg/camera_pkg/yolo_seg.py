@@ -1,4 +1,12 @@
+"""YOLO 세그멘테이션 추론 노드 (YoloSegNode).
 
+image_raw 토픽의 프레임을 커스텀 YOLO-seg 모델(final.pt)에 넣어
+lane1(1차선) / lane2(2차선) / traffic_light / car 를 검출하고,
+bbox + 세그멘테이션 마스크 폴리곤을 DetectionArray로 발행한다.
+
+launch에서 cam0/cam1 네임스페이스로 2개 인스턴스를 띄워
+차선용(cam0)과 신호등용(cam1)을 동시에 처리한다.
+"""
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
@@ -57,6 +65,7 @@ class YoloSegNode(Node):
         #self.get_logger().info("🟢 YoloSegNode is ready and running")
 
     def image_cb(self, msg: Image):
+        """프레임 1장을 추론해 검출 결과(bbox + 마스크)를 DetectionArray로 발행."""
         #self.get_logger().info("🟢 image_cb 호출됨")
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         

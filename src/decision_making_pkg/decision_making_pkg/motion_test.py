@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
+"""장애물주행 로직의 카메라 전용 초기 버전 (테스트/백업용).
 
+motion_mission.py와 달리 LiDAR 없이 카메라 bbox 면적만으로
+차선 변경(2→1, 1→2)을 판단한다. 최종 대회에서는 LiDAR를 병용하는
+motion_mission.py를 사용했다.
+"""
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String

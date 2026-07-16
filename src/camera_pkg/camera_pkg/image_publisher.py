@@ -1,3 +1,11 @@
+"""영상 입력 노드 (ImagePublisherNode).
+
+웹캠(camera) / 동영상 파일(video) / 이미지 폴더(image) 세 가지 소스를
+파라미터로 선택해 640x480으로 리사이즈 후 image_raw 토픽으로 발행한다.
+
+대회 본선에서는 launch에서 cam0(차선용), cam1(신호등용) 두 인스턴스를 띄우고,
+개발 중에는 image/video 모드로 녹화 데이터를 재생해 오프라인 테스트에 사용했다.
+"""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
